@@ -5,7 +5,7 @@ import os
 import sys
 from collections import deque
 from collections.abc import Callable
-from typing import Any, Final, TypeVar
+from typing import Any, Final, TypeVar, cast
 
 from . import current_time, to_thread
 from ._core._exceptions import BrokenWorkerInterpreter
@@ -48,9 +48,9 @@ if sys.version_info >= (3, 14):
                 raise BrokenWorkerInterpreter(exc.excinfo) from exc
 
             if is_exception:
-                raise res
+                raise cast(BaseException, res)
 
-            return res
+            return cast(T_Retval, res)
 elif sys.version_info >= (3, 13):
     import _interpqueues
     import _interpreters
@@ -123,9 +123,9 @@ except NotShareableError:
                 res = pickle.loads(res)
 
             if is_exception:
-                raise res
+                raise cast(BaseException, res)
 
-            return res
+            return cast(T_Retval, res)
 else:
 
     class Worker:

@@ -68,7 +68,7 @@ class AsyncFile(AsyncResource, Generic[AnyStr]):
     """
 
     def __init__(self, fp: IO[AnyStr]) -> None:
-        self._fp: Any = fp
+        self._fp: IO[AnyStr] = fp
 
     def __getattr__(self, name: str) -> object:
         return getattr(self._fp, name)
@@ -93,7 +93,9 @@ class AsyncFile(AsyncResource, Generic[AnyStr]):
         return await to_thread.run_sync(self._fp.read, size)
 
     async def read1(self: AsyncFile[bytes], size: int = -1) -> bytes:
-        return await to_thread.run_sync(self._fp.read1, size)
+        from typing import cast as _cast
+        # read1 is available on BufferedIOBase-like objects; help the type checker
+        return await to_thread.run_sync(_cast(Any, self._fp).read1, size)
 
     async def readline(self) -> AnyStr:
         return await to_thread.run_sync(self._fp.readline)
@@ -102,10 +104,12 @@ class AsyncFile(AsyncResource, Generic[AnyStr]):
         return await to_thread.run_sync(self._fp.readlines)
 
     async def readinto(self: AsyncFile[bytes], b: WriteableBuffer) -> int:
-        return await to_thread.run_sync(self._fp.readinto, b)
+        from typing import cast as _cast
+        return await to_thread.run_sync(_cast(Any, self._fp).readinto, b)
 
     async def readinto1(self: AsyncFile[bytes], b: WriteableBuffer) -> int:
-        return await to_thread.run_sync(self._fp.readinto1, b)
+        from typing import cast as _cast
+        return await to_thread.run_sync(_cast(Any, self._fp).readinto1, b)
 
     @overload
     async def write(self: AsyncFile[bytes], b: ReadableBuffer) -> int: ...
@@ -114,7 +118,8 @@ class AsyncFile(AsyncResource, Generic[AnyStr]):
     async def write(self: AsyncFile[str], b: str) -> int: ...
 
     async def write(self, b: ReadableBuffer | str) -> int:
-        return await to_thread.run_sync(self._fp.write, b)
+        from typing import cast as _cast
+        return await to_thread.run_sync(_cast(Any, self._fp).write, b)
 
     @overload
     async def writelines(
@@ -125,13 +130,18 @@ class AsyncFile(AsyncResource, Generic[AnyStr]):
     async def writelines(self: AsyncFile[str], lines: Iterable[str]) -> None: ...
 
     async def writelines(self, lines: Iterable[ReadableBuffer] | Iterable[str]) -> None:
-        return await to_thread.run_sync(self._fp.writelines, lines)
+        from typing import cast as _cast
+        return await to_thread.run_sync(_cast(Any, self._fp).writelines, lines)
 
     async def truncate(self, size: int | None = None) -> int:
-        return await to_thread.run_sync(self._fp.truncate, size)
+        from typing import cast as _cast
+        return await to_thread.run_sync(_cast(Any, self._fp).truncate, size)
 
     async def seek(self, offset: int, whence: int | None = os.SEEK_SET) -> int:
-        return await to_thread.run_sync(self._fp.seek, offset, whence)
+        def _seek(o: int, w: int | None) -> int:
+            return self._fp.seek(o, os.SEEK_SET if w is None else w)
+
+        return await to_thread.run_sync(_seek, offset, whence)
 
     async def tell(self) -> int:
         return await to_thread.run_sync(self._fp.tell)
@@ -414,6 +424,7 @@ class Path:
 
         @property
         def info(self) -> Any:  # TODO: add return type annotation when Typeshed gets it
+            # pathlib.Path.info is not yet typed in Typeshed; "Any" is intentional
             return self._path.info
 
         async def copy(

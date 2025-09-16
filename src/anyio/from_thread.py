@@ -47,7 +47,7 @@ def _token_or_error(token: EventLoopToken | None) -> EventLoopToken:
         return token
 
     try:
-        return threadlocals.current_token
+        return cast(EventLoopToken, threadlocals.current_token)
     except AttributeError:
         raise NoEventLoopError(
             "Not running inside an AnyIO worker thread, and no event loop token was "
@@ -111,7 +111,7 @@ def run_sync(
     )
 
 
-class _BlockingAsyncContextManager(Generic[T_co], AbstractContextManager):
+class _BlockingAsyncContextManager(Generic[T_co], AbstractContextManager[T_co]):
     _enter_future: Future[T_co]
     _exit_future: Future[bool | None]
     _exit_event: Event
@@ -150,7 +150,7 @@ class _BlockingAsyncContextManager(Generic[T_co], AbstractContextManager):
         return result
 
     def __enter__(self) -> T_co:
-        self._enter_future = Future()
+        self._enter_future = Future[T_co]()
         self._exit_future = self._portal.start_task_soon(self.run_async_cm)
         return self._enter_future.result()
 
@@ -166,7 +166,7 @@ class _BlockingAsyncContextManager(Generic[T_co], AbstractContextManager):
 
 
 class _BlockingPortalTaskStatus(TaskStatus):
-    def __init__(self, future: Future):
+    def __init__(self, future: Future[Any]):
         self._future = future
 
     def started(self, value: object = None) -> None:
@@ -361,7 +361,7 @@ class BlockingPortal:
 
         """
         self._check_running()
-        f: Future[T_Retval] = Future()
+        f: Future[T_Retval] = Future[T_Retval]()
         self._spawn_task_from_thread(func, args, {}, name, f)
         return f
 
@@ -401,9 +401,9 @@ class BlockingPortal:
                     task_status_future.set_exception(exc)
 
         self._check_running()
-        task_status_future: Future = Future()
+        task_status_future: Future[Any] = Future[Any]()
         task_status = _BlockingPortalTaskStatus(task_status_future)
-        f: Future = Future()
+        f: Future[T_Retval] = Future[T_Retval]()
         f.add_done_callback(task_done)
         self._spawn_task_from_thread(func, args, {"task_status": task_status}, name, f)
         return f, task_status_future.result()

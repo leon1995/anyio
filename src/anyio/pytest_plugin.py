@@ -29,6 +29,7 @@ def extract_backend_and_options(backend: object) -> tuple[str, dict[str, Any]]:
         return backend, {}
     elif isinstance(backend, tuple) and len(backend) == 2:
         if isinstance(backend[0], str) and isinstance(backend[1], dict):
+            # Safely cast the validated tuple to the desired type
             return cast(tuple[str, dict[str, Any]], backend)
 
     raise TypeError("anyio_backend must be either a string or tuple of (string, dict)")
@@ -36,7 +37,7 @@ def extract_backend_and_options(backend: object) -> tuple[str, dict[str, Any]]:
 
 @contextmanager
 def get_runner(
-    backend_name: str, backend_options: dict[str, Any]
+    backend_name: str, backend_options: dict[str, Any] | None
 ) -> Iterator[TestRunner]:
     global _current_runner, _runner_leases, _runner_stack
     if _current_runner is None:
@@ -48,9 +49,9 @@ def get_runner(
             token = sniffio.current_async_library_cvar.set(backend_name)
             _runner_stack.callback(sniffio.current_async_library_cvar.reset, token)
 
-        backend_options = backend_options or {}
+        options: dict[str, Any] = backend_options or {}
         _current_runner = _runner_stack.enter_context(
-            asynclib.create_test_runner(backend_options)
+            asynclib.create_test_runner(options)
         )
 
     _runner_leases += 1
@@ -206,7 +207,8 @@ def anyio_backend_name(anyio_backend: Any) -> str:
     if isinstance(anyio_backend, str):
         return anyio_backend
     else:
-        return anyio_backend[0]
+        backend_name, _ = extract_backend_and_options(anyio_backend)
+        return backend_name
 
 
 @pytest.fixture
@@ -214,7 +216,8 @@ def anyio_backend_options(anyio_backend: Any) -> dict[str, Any]:
     if isinstance(anyio_backend, str):
         return {}
     else:
-        return anyio_backend[1]
+        _, options = extract_backend_and_options(anyio_backend)
+        return options
 
 
 class FreePortFactory:

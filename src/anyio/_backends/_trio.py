@@ -360,7 +360,7 @@ class _ProcessPoolShutdownInstrument(trio.abc.Instrument):
         super().after_run()
 
 
-current_default_worker_process_limiter: trio.lowlevel.RunVar = RunVar(
+current_default_worker_process_limiter: trio.lowlevel.RunVar[trio.CapacityLimiter] = RunVar(
     "current_default_worker_process_limiter"
 )
 
@@ -396,7 +396,7 @@ class _TrioSocketMixin(Generic[T_SockAddr]):
 
     @property
     def _raw_socket(self) -> socket.socket:
-        return self._trio_socket._sock  # type: ignore[attr-defined]
+        return cast(socket.socket, self._trio_socket._sock)  # type: ignore[attr-defined]
 
     async def aclose(self) -> None:
         if self._trio_socket.fileno() >= 0:
@@ -414,7 +414,7 @@ class _TrioSocketMixin(Generic[T_SockAddr]):
             raise exc
 
 
-class SocketStream(_TrioSocketMixin, abc.SocketStream):
+class SocketStream(_TrioSocketMixin[IPSockAddrType], abc.SocketStream):
     def __init__(self, trio_socket: TrioSocketType) -> None:
         super().__init__(trio_socket)
         self._receive_guard = ResourceGuard("reading from")
@@ -514,7 +514,7 @@ class UNIXSocketStream(SocketStream, abc.UNIXSocketStream):
                     self._convert_socket_error(exc)
 
 
-class TCPSocketListener(_TrioSocketMixin, abc.SocketListener):
+class TCPSocketListener(_TrioSocketMixin[IPSockAddrType], abc.SocketListener):
     def __init__(self, raw_socket: socket.socket):
         super().__init__(trio.socket.from_stdlib_socket(raw_socket))
         self._accept_guard = ResourceGuard("accepting connections from")
@@ -530,7 +530,7 @@ class TCPSocketListener(_TrioSocketMixin, abc.SocketListener):
         return SocketStream(trio_socket)
 
 
-class UNIXSocketListener(_TrioSocketMixin, abc.SocketListener):
+class UNIXSocketListener(_TrioSocketMixin[str], abc.SocketListener):
     def __init__(self, raw_socket: socket.socket):
         super().__init__(trio.socket.from_stdlib_socket(raw_socket))
         self._accept_guard = ResourceGuard("accepting connections from")
@@ -845,7 +845,7 @@ class CapacityLimiter(BaseCapacityLimiter):
         )
 
 
-_capacity_limiter_wrapper: trio.lowlevel.RunVar = RunVar("_capacity_limiter_wrapper")
+_capacity_limiter_wrapper: trio.lowlevel.RunVar[CapacityLimiter] = RunVar("_capacity_limiter_wrapper")
 
 
 #
@@ -870,7 +870,11 @@ class _SignalReceiver:
         exc_val: BaseException | None,
         exc_tb: TracebackType | None,
     ) -> bool | None:
-        return self._cm.__exit__(exc_type, exc_val, exc_tb)
+        result = self._cm.__exit__(exc_type, exc_val, exc_tb)
+        if result is None:
+            return None
+        # result is a bool here; cast to bool to satisfy the annotated return type
+        return bool(result)
 
     def __aiter__(self) -> _SignalReceiver:
         return self
@@ -890,7 +894,7 @@ class TestRunner(abc.TestRunner):
         from queue import Queue
 
         self._call_queue: Queue[Callable[[], object]] = Queue()
-        self._send_stream: MemoryObjectSendStream | None = None
+        self._send_stream: MemoryObjectSendStream[Any] | None = None
         self._options = options
 
     def __exit__(
@@ -934,12 +938,12 @@ class TestRunner(abc.TestRunner):
             while self._send_stream is None:
                 self._call_queue.get()()
 
-        outcome_holder: list[Outcome] = []
+        outcome_holder: list[Outcome[Any]] = []
         self._send_stream.send_nowait((func(*args, **kwargs), outcome_holder))
         while not outcome_holder:
             self._call_queue.get()()
 
-        return outcome_holder[0].unwrap()
+        return cast(T_Retval, outcome_holder[0].unwrap())
 
     def run_asyncgen_fixture(
         self,
@@ -983,7 +987,7 @@ class TrioTaskInfo(TaskInfo):
 
     def has_pending_cancellation(self) -> bool:
         try:
-            return self._task._cancel_status.effectively_cancelled
+            return bool(self._task._cancel_status.effectively_cancelled)
         except ReferenceError:
             # If the task is no longer around, it surely doesn't have a cancellation
             # pending

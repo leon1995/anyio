@@ -6,7 +6,7 @@ import threading
 from collections.abc import Awaitable, Callable, Generator
 from contextlib import contextmanager
 from importlib import import_module
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 import sniffio
 
@@ -162,5 +162,6 @@ def get_async_backend(asynclib_name: str | None = None) -> type[AsyncBackend]:
         return loaded_backends[asynclib_name]
     except KeyError:
         module = import_module(f"anyio._backends._{asynclib_name}")
-        loaded_backends[asynclib_name] = module.backend_class
-        return module.backend_class
+        backend_class = cast("type[AsyncBackend]", module.backend_class)
+        loaded_backends[asynclib_name] = backend_class
+        return backend_class

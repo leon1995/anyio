@@ -12,6 +12,7 @@ from typing import (
     AnyStr,
     Generic,
     overload,
+    cast,
 )
 
 from .. import to_thread
@@ -344,7 +345,7 @@ class SpooledTemporaryFile(AsyncFile[AnyStr]):
     async def read1(self: SpooledTemporaryFile[bytes], size: int = -1) -> bytes:
         if not self._rolled:
             await checkpoint_if_cancelled()
-            return self._fp.read1(size)
+            return cast(bytes, self._fp.read1(size))  # type: ignore[attr-defined]
 
         return await super().read1(size)
 
@@ -365,21 +366,21 @@ class SpooledTemporaryFile(AsyncFile[AnyStr]):
     async def readinto(self: SpooledTemporaryFile[bytes], b: WriteableBuffer) -> int:
         if not self._rolled:
             await checkpoint_if_cancelled()
-            self._fp.readinto(b)
+            return cast(int, self._fp.readinto(b))  # type: ignore[attr-defined]
 
         return await super().readinto(b)
 
     async def readinto1(self: SpooledTemporaryFile[bytes], b: WriteableBuffer) -> int:
         if not self._rolled:
             await checkpoint_if_cancelled()
-            self._fp.readinto(b)
+            return cast(int, self._fp.readinto1(b))  # type: ignore[attr-defined]
 
         return await super().readinto1(b)
 
     async def seek(self, offset: int, whence: int | None = os.SEEK_SET) -> int:
         if not self._rolled:
             await checkpoint_if_cancelled()
-            return self._fp.seek(offset, whence)
+            return self._fp.seek(offset, whence if whence is not None else os.SEEK_SET)
 
         return await super().seek(offset, whence)
 
@@ -416,7 +417,8 @@ class SpooledTemporaryFile(AsyncFile[AnyStr]):
         """
         if not self._rolled:
             await checkpoint_if_cancelled()
-            result = self._fp.write(b)
+            # Help the type checker: underlying IO type depends on mode
+            result = self._fp.write(b)  # type: ignore[arg-type]
             await self._check()
             return result
 
@@ -444,7 +446,7 @@ class SpooledTemporaryFile(AsyncFile[AnyStr]):
         """
         if not self._rolled:
             await checkpoint_if_cancelled()
-            result = self._fp.writelines(lines)
+            result = self._fp.writelines(lines)  # type: ignore[arg-type]
             await self._check()
             return result
 
@@ -482,7 +484,7 @@ class TemporaryDirectory(Generic[AnyStr]):
         self.ignore_cleanup_errors = ignore_cleanup_errors
         self.delete = delete
 
-        self._tempdir: tempfile.TemporaryDirectory | None = None
+        self._tempdir: tempfile.TemporaryDirectory[str] | None = None
 
     async def __aenter__(self) -> str:
         params: dict[str, Any] = {
@@ -499,7 +501,9 @@ class TemporaryDirectory(Generic[AnyStr]):
         self._tempdir = await to_thread.run_sync(
             lambda: tempfile.TemporaryDirectory(**params)
         )
-        return await to_thread.run_sync(self._tempdir.__enter__)
+        tempdir = self._tempdir
+        assert tempdir is not None
+        return await to_thread.run_sync(tempdir.__enter__)
 
     async def __aexit__(
         self,

@@ -134,7 +134,7 @@ class MultiListener(Generic[T_Stream], Listener[T_Stream]):
 
     @property
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
-        attributes: dict = {}
+        attributes: dict[Any, Callable[[], Any]] = {}
         for listener in self.listeners:
             attributes.update(listener.extra_attributes)
 
